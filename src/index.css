@@ -90,6 +90,27 @@
   scrollbar-width: none;
 }
 
+.sessions-scroller {
+  scrollbar-color: #00D4FF rgba(16, 24, 39, 0.8);
+  scrollbar-width: thin;
+}
+
+.sessions-scroller::-webkit-scrollbar {
+  height: 10px;
+}
+
+.sessions-scroller::-webkit-scrollbar-track {
+  background: rgba(16, 24, 39, 0.8);
+  border: 1px solid rgba(108, 92, 231, 0.3);
+  border-radius: 999px;
+}
+
+.sessions-scroller::-webkit-scrollbar-thumb {
+  background: #00D4FF;
+  border: 2px solid rgba(16, 24, 39, 0.8);
+  border-radius: 999px;
+}
+
 /* Efecto de escáner */
 .scanner-line {
   background: linear-gradient(to bottom, transparent, rgba(0, 212, 255, 0.5), transparent);

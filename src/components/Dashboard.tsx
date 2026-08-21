@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PerfilUsuario, SesionEntrenamiento } from '../types';
 import { db } from '../supabaseClient';
-import { LogOut, Trophy, Flame, Target, Star, Play, CheckCircle, Lock, Gamepad2 } from 'lucide-react';
+import { LogOut, Trophy, Flame, Target, Star, Play, CheckCircle, Lock, Gamepad2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface DashboardProps {
   profile: PerfilUsuario;
@@ -13,6 +13,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ profile, onLogout, onSelec
   const [userProfile, setUserProfile] = useState<PerfilUsuario>(profile);
   const [sessions, setSessions] = useState<SesionEntrenamiento[]>([]);
   const [loading, setLoading] = useState(true);
+  const sessionsScrollerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -33,6 +34,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ profile, onLogout, onSelec
 
   // Encontrar la siguiente sesión pendiente
   const currentPendingSession = sessions.find(s => !s.completada);
+
+  const scrollSessions = (direction: 'left' | 'right') => {
+    sessionsScrollerRef.current?.scrollBy({
+      left: direction === 'right' ? 420 : -420,
+      behavior: 'smooth'
+    });
+  };
 
   // Renderizar Avatar Espacial SVG basado en el nivel
   const renderAvatarSVG = (level: number) => {
@@ -230,7 +238,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ profile, onLogout, onSelec
           </div>
 
           {/* Línea de tiempo de sesiones */}
-          <div className="overflow-x-auto pb-4 no-scrollbar">
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="Ver sesiones anteriores"
+              title="Ver sesiones anteriores"
+              onClick={() => scrollSessions('left')}
+              className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full border border-brand-cyan/50 bg-bg-space/95 p-2 text-brand-cyan shadow-lg transition hover:bg-brand-cyan hover:text-bg-space"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <div ref={sessionsScrollerRef} className="sessions-scroller overflow-x-auto pb-5 pl-10 pr-10 scroll-smooth">
             <div className="flex gap-4 min-w-max px-2">
               {sessions.map((sess) => {
                 const isCurrent = currentPendingSession?.id === sess.id;
@@ -270,6 +288,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ profile, onLogout, onSelec
                 );
               })}
             </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Ver más sesiones"
+              title="Ver más sesiones"
+              onClick={() => scrollSessions('right')}
+              className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full border border-brand-cyan/50 bg-bg-space/95 p-2 text-brand-cyan shadow-lg transition hover:bg-brand-cyan hover:text-bg-space"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
           </div>
         </section>
 
