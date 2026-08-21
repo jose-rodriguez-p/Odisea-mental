@@ -1,0 +1,122 @@
+{
+  "users": [
+    {
+      "id": "local-student-jose",
+      "email": "jose@gmail.com",
+      "password": "password123",
+      "rol": "estudiante"
+    },
+    {
+      "id": "local-teacher-alex",
+      "email": "alex@gmail.com",
+      "password": "password123",
+      "rol": "docente"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "local-student-jose",
+      "correo": "jose@gmail.com",
+      "pseudonimo": "EST-2026-0001",
+      "rol": "estudiante",
+      "xp": 0,
+      "nivel": 1,
+      "racha": 0,
+      "ultimo_entrenamiento": null,
+      "created_at": "2026-08-21T00:00:00.000Z",
+      "updated_at": "2026-08-21T00:00:00.000Z"
+    },
+    {
+      "id": "local-teacher-alex",
+      "correo": "alex@gmail.com",
+      "pseudonimo": "Alex",
+      "rol": "docente",
+      "xp": 0,
+      "nivel": 1,
+      "racha": 0,
+      "ultimo_entrenamiento": null,
+      "created_at": "2026-08-21T00:00:00.000Z",
+      "updated_at": "2026-08-21T00:00:00.000Z"
+    }
+  ],
+  "sessions": [
+    { "id": "session-local-student-jose-1", "usuario_id": "local-student-jose", "numero_sesion": 1, "semana": 1, "completada": true, "fecha_completada": "2026-08-18T10:00:00.000Z", "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-18T10:00:00.000Z" },
+    { "id": "session-local-student-jose-2", "usuario_id": "local-student-jose", "numero_sesion": 2, "semana": 1, "completada": true, "fecha_completada": "2026-08-19T10:00:00.000Z", "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-19T10:00:00.000Z" },
+    { "id": "session-local-student-jose-3", "usuario_id": "local-student-jose", "numero_sesion": 3, "semana": 1, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-4", "usuario_id": "local-student-jose", "numero_sesion": 4, "semana": 2, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-5", "usuario_id": "local-student-jose", "numero_sesion": 5, "semana": 2, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-6", "usuario_id": "local-student-jose", "numero_sesion": 6, "semana": 2, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-7", "usuario_id": "local-student-jose", "numero_sesion": 7, "semana": 3, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-8", "usuario_id": "local-student-jose", "numero_sesion": 8, "semana": 3, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-9", "usuario_id": "local-student-jose", "numero_sesion": 9, "semana": 3, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-10", "usuario_id": "local-student-jose", "numero_sesion": 10, "semana": 4, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-11", "usuario_id": "local-student-jose", "numero_sesion": 11, "semana": 4, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-12", "usuario_id": "local-student-jose", "numero_sesion": 12, "semana": 4, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-13", "usuario_id": "local-student-jose", "numero_sesion": 13, "semana": 5, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-14", "usuario_id": "local-student-jose", "numero_sesion": 14, "semana": 5, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-15", "usuario_id": "local-student-jose", "numero_sesion": 15, "semana": 5, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-16", "usuario_id": "local-student-jose", "numero_sesion": 16, "semana": 6, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-17", "usuario_id": "local-student-jose", "numero_sesion": 17, "semana": 6, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-18", "usuario_id": "local-student-jose", "numero_sesion": 18, "semana": 6, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-19", "usuario_id": "local-student-jose", "numero_sesion": 19, "semana": 7, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-20", "usuario_id": "local-student-jose", "numero_sesion": 20, "semana": 7, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-21", "usuario_id": "local-student-jose", "numero_sesion": 21, "semana": 7, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-22", "usuario_id": "local-student-jose", "numero_sesion": 22, "semana": 8, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-23", "usuario_id": "local-student-jose", "numero_sesion": 23, "semana": 8, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" },
+    { "id": "session-local-student-jose-24", "usuario_id": "local-student-jose", "numero_sesion": 24, "semana": 8, "completada": false, "fecha_completada": null, "created_at": "2026-08-01T10:00:00.000Z", "updated_at": "2026-08-01T10:00:00.000Z" }
+  ],
+  "metrics": [
+    {
+      "id": "metric-local-jose-1",
+      "usuario_id": "local-student-jose",
+      "sesion_id": "session-local-student-jose-1",
+      "juego_id": 1,
+      "juego_nombre": "Mision Deteccion (CPT)",
+      "aciertos": 12,
+      "errores_omision": 2,
+      "errores_comision": 1,
+      "precision": 80,
+      "tiempo_reaccion_promedio_ms": 480.2,
+      "nivel_dificultad_alcanzado": 1,
+      "velocidad_estimulo_ms": 1200,
+      "densidad_distractores": 1,
+      "xp_ganado": 180,
+      "created_at": "2026-08-18T10:30:00.000Z"
+    },
+    {
+      "id": "metric-local-jose-2",
+      "usuario_id": "local-student-jose",
+      "sesion_id": "session-local-student-jose-2",
+      "juego_id": 2,
+      "juego_nombre": "Escaner Visual (d2)",
+      "aciertos": 16,
+      "errores_omision": 1,
+      "errores_comision": 0,
+      "precision": 94.12,
+      "tiempo_reaccion_promedio_ms": 405.5,
+      "nivel_dificultad_alcanzado": 2,
+      "velocidad_estimulo_ms": null,
+      "densidad_distractores": 2,
+      "xp_ganado": 390,
+      "created_at": "2026-08-19T10:30:00.000Z"
+    }
+  ],
+  "evaluaciones": [
+    {
+      "id": "evaluation-local-jose-pre",
+      "estudiante_id": "local-student-jose",
+      "docente_id": "local-teacher-alex",
+      "tipo_evaluacion": "pre",
+      "fecha_evaluacion": "2026-08-17T10:00:00.000Z",
+      "atencion_sostenida_score": 60,
+      "atencion_selectiva_score": 55.5,
+      "control_inhibitorio_score": 68,
+      "memoria_trabajo_score": 50,
+      "atencion_dividida_score": 40,
+      "tiempo_respuesta_general_ms": 590.2,
+      "observaciones": "Atencion sostenida estable inicialmente.",
+      "created_at": "2026-08-17T10:00:00.000Z",
+      "updated_at": "2026-08-17T10:00:00.000Z"
+    }
+  ]
+}

@@ -1,56 +1,14 @@
 -- ============================================================================
--- SCRIPT DE BASE DE DATOS LOCAL (COMPATIBLE CON PGADMIN / POSTGRESQL LOCAL)
+-- SCRIPT DE BASE DE DATOS PARA SUPABASE
 -- PROYECTO: "ODISEA MENTAL"
--- DESCRIPCIÓN: Script adaptado para ejecutarse en PostgreSQL local (pgAdmin)
---              simulando la estructura y triggers del entorno de Supabase.
+-- DESCRIPCIÓN: Tablas, funciones y políticas públicas de la aplicación.
+-- IMPORTANTE: Ejecutar en el SQL Editor de Supabase solo desde la sección 1.
+--              Supabase administra el esquema auth y no debe modificarse.
 -- ============================================================================
 
--- Habilitar extensiones requeridas en la base de datos local
+-- Extensiones disponibles en Supabase
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- Para encriptación y contraseñas (crypt/gen_salt)
-
--- ----------------------------------------------------------------------------
--- 0. SIMULACIÓN DEL ENTORNO DE SUPABASE EN POSTGRES LOCAL
--- ----------------------------------------------------------------------------
--- Crear el esquema "auth" si no existe
-CREATE SCHEMA IF NOT EXISTS auth;
-
--- Crear la tabla "users" en el esquema "auth" para simular la autenticación
-CREATE TABLE IF NOT EXISTS auth.users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    instance_id UUID,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    encrypted_password VARCHAR(255) NOT NULL,
-    email_confirmed_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    raw_app_meta_data JSONB DEFAULT '{"provider":"email","providers":["email"]}'::jsonb,
-    raw_user_meta_data JSONB DEFAULT '{}'::jsonb,
-    role VARCHAR(255) DEFAULT 'authenticated',
-    aud VARCHAR(255) DEFAULT 'authenticated',
-    confirmation_token VARCHAR(255) DEFAULT '',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-COMMENT ON TABLE auth.users IS 'Tabla simulada de autenticación de Supabase para desarrollo en Postgres local.';
-
--- Crear la función mock "auth.uid()" utilizada por las políticas RLS
--- Permite que las políticas compilen y se ejecuten sin errores en pgAdmin.
-CREATE OR REPLACE FUNCTION auth.uid()
-RETURNS UUID AS $$
-BEGIN
-    -- Intenta leer el ID de usuario desde los claims de Supabase (JWT)
-    -- o desde una variable de configuración de sesión local 'my.current_user_id'
-    RETURN COALESCE(
-        NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', ''),
-        NULLIF(current_setting('my.current_user_id', true), '')
-    )::UUID;
-EXCEPTION
-    WHEN OTHERS THEN
-        RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-COMMENT ON FUNCTION auth.uid() IS 'Función simulada de Supabase para obtener el UUID del usuario activo.';
 
 -- ----------------------------------------------------------------------------
 -- 1. TABLA: perfiles_usuarios
@@ -203,13 +161,15 @@ BEGIN
         0,
         1,
         0
-    );
+    )
+    ON CONFLICT (id) DO NOTHING;
     
     -- Crear automáticamente las 24 sesiones de entrenamiento para el estudiante
     IF assigned_rol = 'estudiante' THEN
         FOR s IN 1..24 LOOP
             INSERT INTO public.sesiones_entrenamiento (usuario_id, numero_sesion, semana, completada)
-            VALUES (NEW.id, s, ceil(s::numeric / 3), false);
+            VALUES (NEW.id, s, ceil(s::numeric / 3), false)
+            ON CONFLICT (usuario_id, numero_sesion) DO NOTHING;
         END LOOP;
     END IF;
 
@@ -217,8 +177,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
+DROP TRIGGER IF EXISTS on_auth_user_created_odisea ON auth.users;
+CREATE TRIGGER on_auth_user_created_odisea
     AFTER INSERT ON auth.users
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_new_user_registration();
@@ -397,73 +357,57 @@ ALTER TABLE public.sesiones_entrenamiento ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.metricas_minijuegos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.evaluaciones_docente ENABLE ROW LEVEL SECURITY;
 
+-- Funcion segura para consultar el rol sin recursión en las políticas RLS.
+CREATE OR REPLACE FUNCTION public.get_my_role()
+RETURNS VARCHAR
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT rol FROM public.perfiles_usuarios WHERE id = (SELECT auth.uid());
+$$;
+
+REVOKE ALL ON FUNCTION public.get_my_role() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_my_role() TO authenticated;
+
 -- 10.1 Políticas para perfiles_usuarios
+DROP POLICY IF EXISTS "Permitir lectura de perfil propio" ON public.perfiles_usuarios;
+DROP POLICY IF EXISTS "Permitir a docentes/admin ver perfiles" ON public.perfiles_usuarios;
+DROP POLICY IF EXISTS "Permitir actualización de perfil propio" ON public.perfiles_usuarios;
 CREATE POLICY "Permitir lectura de perfil propio" ON public.perfiles_usuarios FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Permitir a docentes/admin ver perfiles" ON public.perfiles_usuarios FOR SELECT USING (EXISTS (SELECT 1 FROM public.perfiles_usuarios WHERE id = auth.uid() AND rol IN ('docente', 'administrador')));
+CREATE POLICY "Permitir a docentes/admin ver perfiles" ON public.perfiles_usuarios FOR SELECT USING (public.get_my_role() IN ('docente', 'administrador'));
 CREATE POLICY "Permitir actualización de perfil propio" ON public.perfiles_usuarios FOR UPDATE USING (auth.uid() = id);
 
 -- 10.2 Políticas para sesiones_entrenamiento
+DROP POLICY IF EXISTS "Estudiantes ven sus propias sesiones" ON public.sesiones_entrenamiento;
+DROP POLICY IF EXISTS "Estudiantes gestionan sus propias sesiones" ON public.sesiones_entrenamiento;
+DROP POLICY IF EXISTS "Docentes ven las sesiones de todos" ON public.sesiones_entrenamiento;
 CREATE POLICY "Estudiantes ven sus propias sesiones" ON public.sesiones_entrenamiento FOR SELECT USING (auth.uid() = usuario_id);
 CREATE POLICY "Estudiantes gestionan sus propias sesiones" ON public.sesiones_entrenamiento FOR ALL USING (auth.uid() = usuario_id);
-CREATE POLICY "Docentes ven las sesiones de todos" ON public.sesiones_entrenamiento FOR SELECT USING (EXISTS (SELECT 1 FROM public.perfiles_usuarios WHERE id = auth.uid() AND rol IN ('docente', 'administrador')));
+CREATE POLICY "Docentes ven las sesiones de todos" ON public.sesiones_entrenamiento FOR SELECT USING (public.get_my_role() IN ('docente', 'administrador'));
 
 -- 10.3 Políticas para metricas_minijuegos
+DROP POLICY IF EXISTS "Estudiantes ven sus propias métricas" ON public.metricas_minijuegos;
+DROP POLICY IF EXISTS "Estudiantes insertan sus métricas" ON public.metricas_minijuegos;
+DROP POLICY IF EXISTS "Docentes ven métricas de alumnos" ON public.metricas_minijuegos;
 CREATE POLICY "Estudiantes ven sus propias métricas" ON public.metricas_minijuegos FOR SELECT USING (auth.uid() = usuario_id);
 CREATE POLICY "Estudiantes insertan sus métricas" ON public.metricas_minijuegos FOR INSERT WITH CHECK (auth.uid() = usuario_id);
-CREATE POLICY "Docentes ven métricas de alumnos" ON public.metricas_minijuegos FOR SELECT USING (EXISTS (SELECT 1 FROM public.perfiles_usuarios WHERE id = auth.uid() AND rol IN ('docente', 'administrador')));
+CREATE POLICY "Docentes ven métricas de alumnos" ON public.metricas_minijuegos FOR SELECT USING (public.get_my_role() IN ('docente', 'administrador'));
 
 -- 10.4 Políticas para evaluaciones_docente
+DROP POLICY IF EXISTS "Estudiantes ven sus evaluaciones" ON public.evaluaciones_docente;
+DROP POLICY IF EXISTS "Docentes gestionan evaluaciones" ON public.evaluaciones_docente;
 CREATE POLICY "Estudiantes ven sus evaluaciones" ON public.evaluaciones_docente FOR SELECT USING (auth.uid() = estudiante_id);
-CREATE POLICY "Docentes gestionan evaluaciones" ON public.evaluaciones_docente FOR ALL USING (EXISTS (SELECT 1 FROM public.perfiles_usuarios WHERE id = auth.uid() AND rol IN ('docente', 'administrador')));
+CREATE POLICY "Docentes gestionan evaluaciones" ON public.evaluaciones_docente FOR ALL USING (public.get_my_role() IN ('docente', 'administrador'));
 
 -- ----------------------------------------------------------------------------
 -- 11. DATOS DE PRUEBA (SEED DATA / INSERCIONES DE SIMULACIÓN)
 -- ----------------------------------------------------------------------------
 
--- A. Inserción de usuarios en auth.users (esquema interno simulado)
-INSERT INTO auth.users (id, instance_id, email, encrypted_password, raw_user_meta_data)
-VALUES 
-('d1111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'docente@odiseamental.edu', crypt('password123', gen_salt('bf')), '{"rol":"docente","name":"Prof. Tito Cusy"}'),
-('e1111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'estudiante1@correo.com', crypt('password123', gen_salt('bf')), '{"rol":"estudiante"}'),
-('e2222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000', 'estudiante2@correo.com', crypt('password123', gen_salt('bf')), '{"rol":"estudiante"}'),
-('e3333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'estudiante3@correo.com', crypt('password123', gen_salt('bf')), '{"rol":"estudiante"}')
-ON CONFLICT (id) DO NOTHING;
+-- ----------------------------------------------------------------------------
+-- 11. DATOS DE PRUEBA
+-- ----------------------------------------------------------------------------
+-- No se insertan usuarios aquí. Los usuarios de Supabase deben crearse desde
+-- Authentication > Users o mediante supabase.auth.signUp() en la aplicación.
+-- Los UUID de ejemplos del antiguo seed pertenecían a PostgreSQL local.
 
--- B. Completar algunas sesiones de entrenamiento de prueba
--- (El trigger habrá creado automáticamente las 24 sesiones al insertar arriba en auth.users)
-UPDATE public.sesiones_entrenamiento 
-SET completada = true, fecha_completada = now() - INTERVAL '3 days' 
-WHERE usuario_id = 'e1111111-1111-1111-1111-111111111111' AND numero_sesion = 1;
-
-UPDATE public.sesiones_entrenamiento 
-SET completada = true, fecha_completada = now() - INTERVAL '2 days' 
-WHERE usuario_id = 'e1111111-1111-1111-1111-111111111111' AND numero_sesion = 2;
-
-UPDATE public.sesiones_entrenamiento 
-SET completada = true, fecha_completada = now() - INTERVAL '1 day' 
-WHERE usuario_id = 'e1111111-1111-1111-1111-111111111111' AND numero_sesion = 3;
-
--- C. Registrar métricas históricas de juego de prueba
-INSERT INTO public.metricas_minijuegos (usuario_id, juego_id, juego_nombre, aciertos, errores_omision, errores_comision, precision, tiempo_reaccion_promedio_ms, nivel_dificultad_alcanzado, velocidad_estimulo_ms, densidad_distractores, xp_ganado, created_at)
-VALUES 
-('e1111111-1111-1111-1111-111111111111', 1, 'Misión Detección (CPT)', 12, 2, 1, 80.00, 480.20, 1, 1200, 1, 180, now() - INTERVAL '3 days'),
-('e1111111-1111-1111-1111-111111111111', 1, 'Misión Detección (CPT)', 16, 0, 1, 94.12, 405.50, 2, 1100, 2, 390, now() - INTERVAL '2 days'),
-('e1111111-1111-1111-1111-111111111111', 2, 'Escáner Visual (d2)', 9, 2, 1, 75.00, 520.00, 2, NULL, 2, 135, now() - INTERVAL '1 day'),
-('e2222222-2222-2222-2222-222222222222', 1, 'Misión Detección (CPT)', 11, 4, 3, 61.11, 610.40, 1, 1200, 1, 165, now() - INTERVAL '2 days')
-ON CONFLICT DO NOTHING;
-
--- D. Sincronizar perfiles con XP y racha acumulada
-UPDATE public.perfiles_usuarios 
-SET xp = 705, nivel = 2, racha = 3, ultimo_entrenamiento = now() - INTERVAL '1 day' 
-WHERE id = 'e1111111-1111-1111-1111-111111111111';
-
-UPDATE public.perfiles_usuarios 
-SET xp = 165, nivel = 1, racha = 1, ultimo_entrenamiento = now() - INTERVAL '2 days' 
-WHERE id = 'e2222222-2222-2222-2222-222222222222';
-
--- E. Insertar evaluaciones diagnósticas Pre-test asociadas al docente
-INSERT INTO public.evaluaciones_docente (estudiante_id, docente_id, tipo_evaluacion, atencion_sostenida_score, atencion_selectiva_score, control_inhibitorio_score, memoria_trabajo_score, atencion_dividida_score, tiempo_respuesta_general_ms, observaciones, created_at)
-VALUES 
-('e1111111-1111-1111-1111-111111111111', 'd1111111-1111-1111-1111-111111111111', 'pre', 60.00, 55.50, 68.00, 50.00, 40.00, 590.20, 'Atención sostenida estable inicialmente, decae levemente en tramos finales.', now() - INTERVAL '4 days'),
-('e2222222-2222-2222-2222-222222222222', 'd1111111-1111-1111-1111-111111111111', 'pre', 42.00, 48.00, 30.50, 40.00, 25.00, 710.00, 'Impulsividad alta. Presenta fallos de inhibición frecuentes en estímulos Go/No-Go.', now() - INTERVAL '3 days')
-ON CONFLICT DO NOTHING;

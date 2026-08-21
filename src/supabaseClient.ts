@@ -1,46 +1,101 @@
-import { createClient } from '@supabase/supabase-js';
 import { PerfilUsuario, SesionEntrenamiento, MetricaMinijuego, EvaluacionDocente } from './types';
-import { localApiDB, isLocalApiEnabled } from './localApiClient';
+import localSeed from '../database/data.json';
 
-// Leer variables de entorno (si existen)
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// El prototipo usa exclusivamente el almacenamiento local del navegador.
+export const supabase: any = null;
 
-// Inicializar cliente real solo si las credenciales están configuradas
-export const supabase = supabaseUrl && supabaseAnonKey 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : null;
+const traducirErrorAutenticacion = (mensaje?: string): string => {
+  const error = (mensaje || '').toLowerCase();
+
+  if (error.includes('email address') && error.includes('invalid')) {
+    return 'El correo electronico no tiene un formato valido. Ejemplo: nombre@gmail.com.';
+  }
+  if (error.includes('already registered') || error.includes('already been registered')) {
+    return 'Este correo electronico ya esta registrado.';
+  }
+  if (error.includes('invalid login credentials')) {
+    return 'Correo o contrasena incorrectos.';
+  }
+  if (error.includes('email logins are disabled') || error.includes('email signups are disabled')) {
+    return 'El acceso con correo esta desactivado en la configuracion de Supabase.';
+  }
+  if (error.includes('email not confirmed')) {
+    return 'Debes confirmar tu correo electronico antes de iniciar sesion.';
+  }
+  if (error.includes('password should be at least')) {
+    return 'La contrasena debe tener al menos 6 caracteres.';
+  }
+  if (error.includes('rate limit')) {
+    return 'Has realizado demasiados intentos. Espera unos minutos y vuelve a intentarlo.';
+  }
+  if (error.includes('failed to fetch') || error.includes('networkerror') || error.includes('fetch failed')) {
+    return 'No se pudo conectar con Supabase. Revisa tu conexión y VITE_SUPABASE_URL.';
+  }
+  if (error.includes('invalid api key') || error.includes('apikey')) {
+    return 'La clave de Supabase no es válida. Revisa VITE_SUPABASE_ANON_KEY.';
+  }
+  if (error.includes('database error querying schema')) {
+    return 'Supabase tiene un error en su esquema de autenticacion. Revisa los logs de Auth y no ejecutes db_schema.txt sobre el esquema auth.';
+  }
+
+  return mensaje
+    ? `Supabase rechazo la solicitud: ${mensaje}`
+    : 'No fue posible completar la autenticacion. Intenta nuevamente.';
+};
 
 // ============================================================================
 // BASE DE DATOS MOCK (LOCAL STORAGE FALLBACK)
 // ============================================================================
 class LocalDB {
   private initLocalStorage() {
-    if (!localStorage.getItem('om_users')) localStorage.setItem('om_users', JSON.stringify([]));
-    if (!localStorage.getItem('om_profiles')) {
-      // Registrar un docente por defecto para pruebas rápidas
-      const mockDocente: PerfilUsuario = {
-        id: 'docente-default-uuid',
-        correo: 'docente@odiseamental.com',
-        pseudonimo: 'Prof. Tito Cusy',
-        rol: 'docente',
-        xp: 0,
-        nivel: 1,
-        racha: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      localStorage.setItem('om_profiles', JSON.stringify([mockDocente]));
-      localStorage.setItem('om_users', JSON.stringify([{
-        id: 'docente-default-uuid',
-        email: 'docente@odiseamental.com',
-        password: 'password123',
-        rol: 'docente'
-      }]));
-    }
-    if (!localStorage.getItem('om_sessions')) localStorage.setItem('om_sessions', JSON.stringify([]));
-    if (!localStorage.getItem('om_metrics')) localStorage.setItem('om_metrics', JSON.stringify([]));
-    if (!localStorage.getItem('om_evaluaciones')) localStorage.setItem('om_evaluaciones', JSON.stringify([]));
+    if (!localStorage.getItem('om_users')) localStorage.setItem('om_users', JSON.stringify(localSeed.users));
+    if (!localStorage.getItem('om_profiles')) localStorage.setItem('om_profiles', JSON.stringify(localSeed.profiles));
+    if (!localStorage.getItem('om_sessions')) localStorage.setItem('om_sessions', JSON.stringify(localSeed.sessions));
+    if (!localStorage.getItem('om_metrics')) localStorage.setItem('om_metrics', JSON.stringify(localSeed.metrics));
+    if (!localStorage.getItem('om_evaluaciones')) localStorage.setItem('om_evaluaciones', JSON.stringify(localSeed.evaluaciones));
+
+    const users = this.get<any>('om_users');
+    localSeed.users.forEach(seedUser => {
+      if (!users.some(user => user.email === seedUser.email)) users.push(seedUser);
+    });
+    this.set('om_users', users);
+
+    const profiles = this.get<PerfilUsuario>('om_profiles');
+    localSeed.profiles.forEach(seedProfile => {
+      if (!profiles.some(profile => profile.id === seedProfile.id)) profiles.push(seedProfile);
+    });
+    this.set('om_profiles', profiles);
+
+    const sessions = this.get<SesionEntrenamiento>('om_sessions');
+    profiles.filter(profile => profile.rol === 'estudiante').forEach(profile => {
+      if (!sessions.some(session => session.usuario_id === profile.id)) {
+        for (let sessionNumber = 1; sessionNumber <= 24; sessionNumber += 1) {
+          sessions.push({
+            id: `session-${profile.id}-${sessionNumber}`,
+            usuario_id: profile.id,
+            numero_sesion: sessionNumber,
+            semana: Math.ceil(sessionNumber / 3),
+            completada: false,
+            fecha_completada: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        }
+      }
+    });
+    this.set('om_sessions', sessions);
+
+    const metrics = this.get<MetricaMinijuego>('om_metrics');
+    localSeed.metrics.forEach(seedMetric => {
+      if (!metrics.some(metric => metric.id === seedMetric.id)) metrics.push(seedMetric);
+    });
+    this.set('om_metrics', metrics);
+
+    const evaluations = this.get<EvaluacionDocente>('om_evaluaciones');
+    localSeed.evaluaciones.forEach(seedEvaluation => {
+      if (!evaluations.some(evaluation => evaluation.id === seedEvaluation.id)) evaluations.push(seedEvaluation);
+    });
+    this.set('om_evaluaciones', evaluations);
   }
 
   constructor() {
@@ -259,7 +314,7 @@ class LocalDB {
 
 const localDBInstance = new LocalDB();
 
-const local = isLocalApiEnabled ? localApiDB : localDBInstance;
+const local = localDBInstance;
 
 // ============================================================================
 // API INTEGRADA DE DATOS (INTERFAZ PÚBLICA)
@@ -268,16 +323,20 @@ const local = isLocalApiEnabled ? localApiDB : localDBInstance;
 export const db = {
   // Autenticación
   signUp: async (email: string, password: string, rol: 'estudiante' | 'docente', name?: string) => {
+    const emailNormalizado = email.trim().replace(/[\u200B-\u200D\uFEFF]/g, '').toLowerCase();
     if (supabase) {
       // Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
+        email: emailNormalizado,
         password,
         options: {
           data: { rol, name }
         }
       });
-      if (authError) return { data: null, error: authError };
+      if (authError) {
+        console.error('Supabase signIn error:', authError);
+        return { data: null, error: { ...authError, message: traducirErrorAutenticacion(authError.message) } };
+      }
       // Esperar a que el trigger de postgres inserte el perfil
       // Hacemos una consulta rápida del perfil creado
       let profile = null;
@@ -292,25 +351,29 @@ export const db = {
       }
       return { data: { user: authData.user, profile }, error: null };
     } else {
-      return local.signUp(email, password, rol, name);
+      return local.signUp(emailNormalizado, password, rol, name);
     }
   },
 
   signIn: async (email: string, password: string) => {
+    const emailNormalizado = email.trim().replace(/[\u200B-\u200D\uFEFF]/g, '').toLowerCase();
     if (supabase) {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: emailNormalizado,
         password
       });
-      if (authError) return { data: null, error: authError };
-      const { data: profile } = await supabase
+      if (authError) return { data: null, error: { ...authError, message: traducirErrorAutenticacion(authError.message) } };
+      const { data: profile, error: profileError } = await supabase
         .from('perfiles_usuarios')
         .select('*')
         .eq('id', authData.user.id)
         .single();
+      if (profileError) {
+        return { data: null, error: { message: `Cuenta autenticada, pero no se pudo leer el perfil: ${profileError.message}` } };
+      }
       return { data: { user: authData.user, profile }, error: null };
     } else {
-      return local.signIn(email, password);
+      return local.signIn(emailNormalizado, password);
     }
   },
 
@@ -483,8 +546,6 @@ export const db = {
         .select('*')
         .eq('rol', 'estudiante');
       return data || [];
-    } else if (isLocalApiEnabled) {
-      return localApiDB.getAllStudents();
     } else {
       const all = await localDBInstance.getAllProfiles();
       return all.filter(p => p.rol === 'estudiante');

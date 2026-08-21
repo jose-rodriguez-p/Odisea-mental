@@ -58,10 +58,18 @@ app.get('/api/health', async (_req, res) => {
 });
 
 app.post('/api/auth/signup', async (req, res) => {
-  const { email, password, rol = 'estudiante', name } = req.body;
+  const { email: rawEmail, password, rol = 'estudiante', name } = req.body;
+  const email = typeof rawEmail === 'string'
+    ? rawEmail.trim().replace(/[\u200B-\u200D\uFEFF]/g, '').toLowerCase()
+    : '';
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   if (!email || !password) {
     return res.status(400).json({ error: { message: 'Correo y contraseña son obligatorios.' } });
+  }
+
+  if (!emailValido) {
+    return res.status(400).json({ error: { message: 'Ingresa un correo electronico valido.' } });
   }
 
   try {
@@ -96,7 +104,10 @@ app.post('/api/auth/signup', async (req, res) => {
 });
 
 app.post('/api/auth/signin', async (req, res) => {
-  const { email, password } = req.body;
+  const { email: rawEmail, password } = req.body;
+  const email = typeof rawEmail === 'string'
+    ? rawEmail.trim().replace(/[\u200B-\u200D\uFEFF]/g, '').toLowerCase()
+    : '';
 
   if (!email || !password) {
     return res.status(400).json({ error: { message: 'Correo y contraseña son obligatorios.' } });
