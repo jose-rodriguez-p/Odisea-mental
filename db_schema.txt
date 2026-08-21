@@ -1,0 +1,469 @@
+-- ============================================================================
+-- SCRIPT DE BASE DE DATOS LOCAL (COMPATIBLE CON PGADMIN / POSTGRESQL LOCAL)
+-- PROYECTO: "ODISEA MENTAL"
+-- DESCRIPCIÓN: Script adaptado para ejecutarse en PostgreSQL local (pgAdmin)
+--              simulando la estructura y triggers del entorno de Supabase.
+-- ============================================================================
+
+-- Habilitar extensiones requeridas en la base de datos local
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- Para encriptación y contraseñas (crypt/gen_salt)
+
+-- ----------------------------------------------------------------------------
+-- 0. SIMULACIÓN DEL ENTORNO DE SUPABASE EN POSTGRES LOCAL
+-- ----------------------------------------------------------------------------
+-- Crear el esquema "auth" si no existe
+CREATE SCHEMA IF NOT EXISTS auth;
+
+-- Crear la tabla "users" en el esquema "auth" para simular la autenticación
+CREATE TABLE IF NOT EXISTS auth.users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    instance_id UUID,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    encrypted_password VARCHAR(255) NOT NULL,
+    email_confirmed_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    raw_app_meta_data JSONB DEFAULT '{"provider":"email","providers":["email"]}'::jsonb,
+    raw_user_meta_data JSONB DEFAULT '{}'::jsonb,
+    role VARCHAR(255) DEFAULT 'authenticated',
+    aud VARCHAR(255) DEFAULT 'authenticated',
+    confirmation_token VARCHAR(255) DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+COMMENT ON TABLE auth.users IS 'Tabla simulada de autenticación de Supabase para desarrollo en Postgres local.';
+
+-- Crear la función mock "auth.uid()" utilizada por las políticas RLS
+-- Permite que las políticas compilen y se ejecuten sin errores en pgAdmin.
+CREATE OR REPLACE FUNCTION auth.uid()
+RETURNS UUID AS $$
+BEGIN
+    -- Intenta leer el ID de usuario desde los claims de Supabase (JWT)
+    -- o desde una variable de configuración de sesión local 'my.current_user_id'
+    RETURN COALESCE(
+        NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', ''),
+        NULLIF(current_setting('my.current_user_id', true), '')
+    )::UUID;
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION auth.uid() IS 'Función simulada de Supabase para obtener el UUID del usuario activo.';
+
+-- ----------------------------------------------------------------------------
+-- 1. TABLA: perfiles_usuarios
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.perfiles_usuarios (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    correo VARCHAR(255) NOT NULL,
+    pseudonimo VARCHAR(50) UNIQUE NOT NULL, -- Seudónimo anónimo (ej: EST-2026-0001) para TDAH y anonimato escolar
+    rol VARCHAR(20) NOT NULL DEFAULT 'estudiante' CHECK (rol IN ('estudiante', 'docente', 'administrador')),
+    xp INTEGER NOT NULL DEFAULT 0 CHECK (xp >= 0),
+    nivel INTEGER NOT NULL DEFAULT 1 CHECK (nivel >= 1),
+    racha INTEGER NOT NULL DEFAULT 0 CHECK (racha >= 0),
+    ultimo_entrenamiento TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+COMMENT ON TABLE public.perfiles_usuarios IS 'Almacena la información de perfiles de estudiantes y docentes.';
+
+-- ----------------------------------------------------------------------------
+-- 2. TABLA: sesiones_entrenamiento
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.sesiones_entrenamiento (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id UUID NOT NULL REFERENCES public.perfiles_usuarios(id) ON DELETE CASCADE,
+    numero_sesion INTEGER NOT NULL CHECK (numero_sesion BETWEEN 1 AND 24),
+    semana INTEGER NOT NULL CHECK (semana BETWEEN 1 AND 8),
+    completada BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha_completada TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    
+    CONSTRAINT unique_usuario_sesion UNIQUE (usuario_id, numero_sesion)
+);
+
+COMMENT ON TABLE public.sesiones_entrenamiento IS 'Control y tracking de las 24 sesiones obligatorias en el programa de 8 semanas.';
+
+-- ----------------------------------------------------------------------------
+-- 3. TABLA: metricas_minijuegos
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.metricas_minijuegos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id UUID NOT NULL REFERENCES public.perfiles_usuarios(id) ON DELETE CASCADE,
+    sesion_id UUID REFERENCES public.sesiones_entrenamiento(id) ON DELETE SET NULL,
+    juego_id INTEGER NOT NULL CHECK (juego_id BETWEEN 1 AND 5),
+    juego_nombre VARCHAR(100) NOT NULL,
+    aciertos INTEGER NOT NULL DEFAULT 0 CHECK (aciertos >= 0),
+    errores_omision INTEGER NOT NULL DEFAULT 0 CHECK (errores_omision >= 0),
+    errores_comision INTEGER NOT NULL DEFAULT 0 CHECK (errores_comision >= 0),
+    precision NUMERIC(5, 2) NOT NULL CHECK (precision BETWEEN 0.00 AND 100.00),
+    tiempo_reaccion_promedio_ms NUMERIC(10, 2) NOT NULL CHECK (tiempo_reaccion_promedio_ms >= 0.00),
+    nivel_dificultad_alcanzado INTEGER NOT NULL DEFAULT 1 CHECK (nivel_dificultad_alcanzado >= 1),
+    velocidad_estimulo_ms INTEGER CHECK (velocidad_estimulo_ms >= 0),
+    densidad_distractores INTEGER NOT NULL DEFAULT 0 CHECK (densidad_distractores >= 0),
+    xp_ganado INTEGER NOT NULL DEFAULT 0 CHECK (xp_ganado >= 0),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+COMMENT ON TABLE public.metricas_minijuegos IS 'Registro de desempeño e indicadores cognitivos por cada juego realizado.';
+
+-- ----------------------------------------------------------------------------
+-- 4. TABLA: evaluaciones_docente
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.evaluaciones_docente (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    estudiante_id UUID NOT NULL REFERENCES public.perfiles_usuarios(id) ON DELETE CASCADE,
+    docente_id UUID NOT NULL REFERENCES public.perfiles_usuarios(id) ON DELETE RESTRICT,
+    tipo_evaluacion VARCHAR(10) NOT NULL CHECK (tipo_evaluacion IN ('pre', 'post')),
+    fecha_evaluacion TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    
+    -- Indicadores diagnósticos de funciones ejecutivas
+    atencion_sostenida_score NUMERIC(5, 2) NOT NULL CHECK (atencion_sostenida_score BETWEEN 0.00 AND 100.00),
+    atencion_selectiva_score NUMERIC(5, 2) NOT NULL CHECK (atencion_selectiva_score BETWEEN 0.00 AND 100.00),
+    control_inhibitorio_score NUMERIC(5, 2) NOT NULL CHECK (control_inhibitorio_score BETWEEN 0.00 AND 100.00),
+    memoria_trabajo_score NUMERIC(5, 2) NOT NULL CHECK (memoria_trabajo_score BETWEEN 0.00 AND 100.00),
+    atencion_dividida_score NUMERIC(5, 2) NOT NULL CHECK (atencion_dividida_score BETWEEN 0.00 AND 100.00),
+    tiempo_respuesta_general_ms NUMERIC(10, 2) NOT NULL CHECK (tiempo_respuesta_general_ms >= 0.00),
+    
+    observaciones TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    
+    CONSTRAINT unique_estudiante_tipo_evaluacion UNIQUE (estudiante_id, tipo_evaluacion)
+);
+
+COMMENT ON TABLE public.evaluaciones_docente IS 'Resultados del diagnóstico Pre-test / Post-test administrados por los docentes.';
+
+-- ----------------------------------------------------------------------------
+-- 5. ÍNDICES DE RENDIMIENTO
+-- ----------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_metricas_usuario ON public.metricas_minijuegos(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_metricas_juego ON public.metricas_minijuegos(juego_id);
+CREATE INDEX IF NOT EXISTS idx_sesiones_usuario ON public.sesiones_entrenamiento(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_evaluaciones_estudiante ON public.evaluaciones_docente(estudiante_id);
+
+-- ----------------------------------------------------------------------------
+-- 6. AUTOMATIZACIÓN DE MARCAS DE TIEMPO (updated_at)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.handle_update_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = timezone('utc'::text, now());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_perfiles_usuarios ON public.perfiles_usuarios;
+CREATE TRIGGER trigger_update_perfiles_usuarios
+    BEFORE UPDATE ON public.perfiles_usuarios
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_update_timestamp();
+
+DROP TRIGGER IF EXISTS trigger_update_sesiones_entrenamiento ON public.sesiones_entrenamiento;
+CREATE TRIGGER trigger_update_sesiones_entrenamiento
+    BEFORE UPDATE ON public.sesiones_entrenamiento
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_update_timestamp();
+
+DROP TRIGGER IF EXISTS trigger_update_evaluaciones_docente ON public.evaluaciones_docente;
+CREATE TRIGGER trigger_update_evaluaciones_docente
+    BEFORE UPDATE ON public.evaluaciones_docente
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_update_timestamp();
+
+-- ----------------------------------------------------------------------------
+-- 7. DISPARADOR DE REGISTRO DE USUARIO DE SUPABASE (auth.users)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.handle_new_user_registration()
+RETURNS TRIGGER AS $$
+DECLARE
+    new_pseudonimo VARCHAR(50);
+    user_count INTEGER;
+    assigned_rol VARCHAR(20);
+BEGIN
+    assigned_rol := COALESCE(NEW.raw_user_meta_data->>'rol', 'estudiante');
+    
+    IF assigned_rol = 'estudiante' THEN
+        SELECT COALESCE(COUNT(*), 0) + 1 INTO user_count FROM public.perfiles_usuarios WHERE rol = 'estudiante';
+        new_pseudonimo := 'EST-2026-' || LPAD(user_count::text, 4, '0');
+    ELSE
+        new_pseudonimo := COALESCE(NEW.raw_user_meta_data->>'name', 'USER-' || SUBSTRING(NEW.id::text FROM 1 FOR 8));
+    END IF;
+
+    INSERT INTO public.perfiles_usuarios (id, correo, pseudonimo, rol, xp, nivel, racha)
+    VALUES (
+        NEW.id,
+        NEW.email,
+        new_pseudonimo,
+        assigned_rol,
+        0,
+        1,
+        0
+    );
+    
+    -- Crear automáticamente las 24 sesiones de entrenamiento para el estudiante
+    IF assigned_rol = 'estudiante' THEN
+        FOR s IN 1..24 LOOP
+            INSERT INTO public.sesiones_entrenamiento (usuario_id, numero_sesion, semana, completada)
+            VALUES (NEW.id, s, ceil(s::numeric / 3), false);
+        END LOOP;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_new_user_registration();
+
+-- ----------------------------------------------------------------------------
+-- 8. PROCEDIMIENTOS ALMACENADOS Y FUNCIONES AVANZADAS
+-- ----------------------------------------------------------------------------
+
+-- A. Registrar métricas y actualizar dinámicamente el perfil del alumno (XP, Nivel, Racha)
+CREATE OR REPLACE FUNCTION public.registrar_metrica_y_actualizar_perfil(
+    p_usuario_id UUID,
+    p_sesion_id UUID,
+    p_juego_id INTEGER,
+    p_juego_nombre VARCHAR,
+    p_aciertos INTEGER,
+    p_errores_omision INTEGER,
+    p_errores_comision INTEGER,
+    p_precision NUMERIC,
+    p_tiempo_reaccion NUMERIC,
+    p_nivel_alcanzado INTEGER,
+    p_velocidad_ms INTEGER,
+    p_densidad INTEGER,
+    p_xp_ganado INTEGER
+)
+RETURNS VOID AS $$
+DECLARE
+    v_xp_actual INTEGER;
+    v_nivel_actual INTEGER;
+    v_racha_actual INTEGER;
+    v_ultimo TIMESTAMP WITH TIME ZONE;
+    v_hoy DATE;
+    v_ultimo_dia DATE;
+    
+    v_nuevo_xp INTEGER;
+    v_nuevo_nivel INTEGER;
+    v_nueva_racha INTEGER;
+BEGIN
+    -- 1. Insertar la métrica de juego
+    INSERT INTO public.metricas_minijuegos (
+        usuario_id, sesion_id, juego_id, juego_nombre, aciertos,
+        errores_omision, errores_comision, precision, tiempo_reaccion_promedio_ms,
+        nivel_dificultad_alcanzado, velocidad_estimulo_ms, densidad_distractores, xp_ganado
+    ) VALUES (
+        p_usuario_id, p_sesion_id, p_juego_id, p_juego_nombre, p_aciertos,
+        p_errores_omision, p_errores_comision, p_precision, p_tiempo_reaccion,
+        p_nivel_alcanzado, p_velocidad_ms, p_densidad, p_xp_ganado
+    );
+
+    -- 2. Obtener estadísticas de perfil del usuario
+    SELECT xp, nivel, racha, ultimo_entrenamiento INTO v_xp_actual, v_nivel_actual, v_racha_actual, v_ultimo
+    FROM public.perfiles_usuarios
+    WHERE id = p_usuario_id;
+
+    IF FOUND THEN
+        -- Calcular XP y Nivel (Subir nivel por cada 500 XP acumulados)
+        v_nuevo_xp := v_xp_actual + p_xp_ganado;
+        v_nuevo_nivel := (v_nuevo_xp / 500) + 1;
+        
+        -- Si la dificultad superada en el juego es mayor, ajustar nivel
+        IF p_nivel_alcanzado > v_nuevo_nivel THEN
+            v_nuevo_nivel := p_nivel_alcanzado;
+        END IF;
+
+        -- Calcular racha
+        v_hoy := CURRENT_DATE;
+        IF v_ultimo IS NULL THEN
+            v_nueva_racha := 1;
+        ELSE
+            v_ultimo_dia := v_ultimo::DATE;
+            IF v_ultimo_dia = v_hoy THEN
+                v_nueva_racha := v_racha_actual; -- Mismo día
+            ELSIF v_ultimo_dia = v_hoy - 1 THEN
+                v_nueva_racha := v_racha_actual + 1; -- Día siguiente
+            ELSE
+                v_nueva_racha := 1; -- Racha rota
+            END IF;
+        END IF;
+
+        -- 3. Actualizar perfil
+        UPDATE public.perfiles_usuarios
+        SET xp = v_nuevo_xp,
+            nivel = v_nuevo_nivel,
+            racha = v_nueva_racha,
+            ultimo_entrenamiento = now()
+        WHERE id = p_usuario_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- B. Comparación Pre-test vs Post-test para medir porcentaje de mejora
+CREATE OR REPLACE FUNCTION public.obtener_reporte_comparativo(p_estudiante_id UUID)
+RETURNS TABLE (
+    dimension VARCHAR,
+    pre_score NUMERIC,
+    post_score NUMERIC,
+    mejora_porcentaje NUMERIC
+) AS $$
+DECLARE
+    v_pre public.evaluaciones_docente%ROWTYPE;
+    v_post public.evaluaciones_docente%ROWTYPE;
+BEGIN
+    SELECT * INTO v_pre FROM public.evaluaciones_docente 
+    WHERE estudiante_id = p_estudiante_id AND tipo_evaluacion = 'pre';
+    
+    SELECT * INTO v_post FROM public.evaluaciones_docente 
+    WHERE estudiante_id = p_estudiante_id AND tipo_evaluacion = 'post';
+
+    IF v_pre.id IS NOT NULL AND v_post.id IS NOT NULL THEN
+        -- Dimensión 1: Sostenida
+        dimension := 'Atención Sostenida (CPT)';
+        pre_score := v_pre.atencion_sostenida_score;
+        post_score := v_post.atencion_sostenida_score;
+        mejora_porcentaje := ROUND(((v_post.atencion_sostenida_score - v_pre.atencion_sostenida_score) / NULLIF(v_pre.atencion_sostenida_score, 0)) * 100, 2);
+        RETURN NEXT;
+
+        -- Dimensión 2: Selectiva
+        dimension := 'Atención Selectiva (d2)';
+        pre_score := v_pre.atencion_selectiva_score;
+        post_score := v_post.atencion_selectiva_score;
+        mejora_porcentaje := ROUND(((v_post.atencion_selectiva_score - v_pre.atencion_selectiva_score) / NULLIF(v_pre.atencion_selectiva_score, 0)) * 100, 2);
+        RETURN NEXT;
+
+        -- Dimensión 3: Control Inhibitorio
+        dimension := 'Control Inhibitorio (Go/No-Go)';
+        pre_score := v_pre.control_inhibitorio_score;
+        post_score := v_post.control_inhibitorio_score;
+        mejora_porcentaje := ROUND(((v_post.control_inhibitorio_score - v_pre.control_inhibitorio_score) / NULLIF(v_pre.control_inhibitorio_score, 0)) * 100, 2);
+        RETURN NEXT;
+
+        -- Dimensión 4: Memoria de Trabajo
+        dimension := 'Memoria de Trabajo (Corsi)';
+        pre_score := v_pre.memoria_trabajo_score;
+        post_score := v_post.memoria_trabajo_score;
+        mejora_porcentaje := ROUND(((v_post.memoria_trabajo_score - v_pre.memoria_trabajo_score) / NULLIF(v_pre.memoria_trabajo_score, 0)) * 100, 2);
+        RETURN NEXT;
+
+        -- Dimensión 5: Atención Dividida
+        dimension := 'Atención Dividida (Dual-Task)';
+        pre_score := v_pre.atencion_dividida_score;
+        post_score := v_post.atencion_dividida_score;
+        mejora_porcentaje := ROUND(((v_post.atencion_dividida_score - v_pre.atencion_dividida_score) / NULLIF(v_pre.atencion_dividida_score, 0)) * 100, 2);
+        RETURN NEXT;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ----------------------------------------------------------------------------
+-- 9. VISTAS DE ANÁLISIS AGREGADO
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.vista_resumen_estudiantes AS
+SELECT 
+    p.id AS estudiante_id,
+    p.pseudonimo,
+    p.correo,
+    p.xp,
+    p.nivel,
+    p.racha,
+    p.ultimo_entrenamiento,
+    (SELECT COUNT(*) FROM public.sesiones_entrenamiento WHERE usuario_id = p.id AND completada = true) AS sesiones_completadas,
+    COALESCE(ROUND(AVG(m.precision), 2), 0.00) AS precision_promedio_juegos,
+    COALESCE(ROUND(AVG(m.tiempo_reaccion_promedio_ms), 2), 0.00) AS tiempo_reaccion_promedio_ms
+FROM 
+    public.perfiles_usuarios p
+LEFT JOIN 
+    public.metricas_minijuegos m ON p.id = m.usuario_id
+WHERE 
+    p.rol = 'estudiante'
+GROUP BY 
+    p.id, p.pseudonimo, p.correo, p.xp, p.nivel, p.racha, p.ultimo_entrenamiento;
+
+-- ----------------------------------------------------------------------------
+-- 10. SEGURIDAD Y DIRECTIVAS DE ACCESO (ROW LEVEL SECURITY - RLS)
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.perfiles_usuarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sesiones_entrenamiento ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.metricas_minijuegos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.evaluaciones_docente ENABLE ROW LEVEL SECURITY;
+
+-- 10.1 Políticas para perfiles_usuarios
+CREATE POLICY "Permitir lectura de perfil propio" ON public.perfiles_usuarios FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Permitir a docentes/admin ver perfiles" ON public.perfiles_usuarios FOR SELECT USING (EXISTS (SELECT 1 FROM public.perfiles_usuarios WHERE id = auth.uid() AND rol IN ('docente', 'administrador')));
+CREATE POLICY "Permitir actualización de perfil propio" ON public.perfiles_usuarios FOR UPDATE USING (auth.uid() = id);
+
+-- 10.2 Políticas para sesiones_entrenamiento
+CREATE POLICY "Estudiantes ven sus propias sesiones" ON public.sesiones_entrenamiento FOR SELECT USING (auth.uid() = usuario_id);
+CREATE POLICY "Estudiantes gestionan sus propias sesiones" ON public.sesiones_entrenamiento FOR ALL USING (auth.uid() = usuario_id);
+CREATE POLICY "Docentes ven las sesiones de todos" ON public.sesiones_entrenamiento FOR SELECT USING (EXISTS (SELECT 1 FROM public.perfiles_usuarios WHERE id = auth.uid() AND rol IN ('docente', 'administrador')));
+
+-- 10.3 Políticas para metricas_minijuegos
+CREATE POLICY "Estudiantes ven sus propias métricas" ON public.metricas_minijuegos FOR SELECT USING (auth.uid() = usuario_id);
+CREATE POLICY "Estudiantes insertan sus métricas" ON public.metricas_minijuegos FOR INSERT WITH CHECK (auth.uid() = usuario_id);
+CREATE POLICY "Docentes ven métricas de alumnos" ON public.metricas_minijuegos FOR SELECT USING (EXISTS (SELECT 1 FROM public.perfiles_usuarios WHERE id = auth.uid() AND rol IN ('docente', 'administrador')));
+
+-- 10.4 Políticas para evaluaciones_docente
+CREATE POLICY "Estudiantes ven sus evaluaciones" ON public.evaluaciones_docente FOR SELECT USING (auth.uid() = estudiante_id);
+CREATE POLICY "Docentes gestionan evaluaciones" ON public.evaluaciones_docente FOR ALL USING (EXISTS (SELECT 1 FROM public.perfiles_usuarios WHERE id = auth.uid() AND rol IN ('docente', 'administrador')));
+
+-- ----------------------------------------------------------------------------
+-- 11. DATOS DE PRUEBA (SEED DATA / INSERCIONES DE SIMULACIÓN)
+-- ----------------------------------------------------------------------------
+
+-- A. Inserción de usuarios en auth.users (esquema interno simulado)
+INSERT INTO auth.users (id, instance_id, email, encrypted_password, raw_user_meta_data)
+VALUES 
+('d1111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'docente@odiseamental.edu', crypt('password123', gen_salt('bf')), '{"rol":"docente","name":"Prof. Tito Cusy"}'),
+('e1111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'estudiante1@correo.com', crypt('password123', gen_salt('bf')), '{"rol":"estudiante"}'),
+('e2222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000', 'estudiante2@correo.com', crypt('password123', gen_salt('bf')), '{"rol":"estudiante"}'),
+('e3333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'estudiante3@correo.com', crypt('password123', gen_salt('bf')), '{"rol":"estudiante"}')
+ON CONFLICT (id) DO NOTHING;
+
+-- B. Completar algunas sesiones de entrenamiento de prueba
+-- (El trigger habrá creado automáticamente las 24 sesiones al insertar arriba en auth.users)
+UPDATE public.sesiones_entrenamiento 
+SET completada = true, fecha_completada = now() - INTERVAL '3 days' 
+WHERE usuario_id = 'e1111111-1111-1111-1111-111111111111' AND numero_sesion = 1;
+
+UPDATE public.sesiones_entrenamiento 
+SET completada = true, fecha_completada = now() - INTERVAL '2 days' 
+WHERE usuario_id = 'e1111111-1111-1111-1111-111111111111' AND numero_sesion = 2;
+
+UPDATE public.sesiones_entrenamiento 
+SET completada = true, fecha_completada = now() - INTERVAL '1 day' 
+WHERE usuario_id = 'e1111111-1111-1111-1111-111111111111' AND numero_sesion = 3;
+
+-- C. Registrar métricas históricas de juego de prueba
+INSERT INTO public.metricas_minijuegos (usuario_id, juego_id, juego_nombre, aciertos, errores_omision, errores_comision, precision, tiempo_reaccion_promedio_ms, nivel_dificultad_alcanzado, velocidad_estimulo_ms, densidad_distractores, xp_ganado, created_at)
+VALUES 
+('e1111111-1111-1111-1111-111111111111', 1, 'Misión Detección (CPT)', 12, 2, 1, 80.00, 480.20, 1, 1200, 1, 180, now() - INTERVAL '3 days'),
+('e1111111-1111-1111-1111-111111111111', 1, 'Misión Detección (CPT)', 16, 0, 1, 94.12, 405.50, 2, 1100, 2, 390, now() - INTERVAL '2 days'),
+('e1111111-1111-1111-1111-111111111111', 2, 'Escáner Visual (d2)', 9, 2, 1, 75.00, 520.00, 2, NULL, 2, 135, now() - INTERVAL '1 day'),
+('e2222222-2222-2222-2222-222222222222', 1, 'Misión Detección (CPT)', 11, 4, 3, 61.11, 610.40, 1, 1200, 1, 165, now() - INTERVAL '2 days')
+ON CONFLICT DO NOTHING;
+
+-- D. Sincronizar perfiles con XP y racha acumulada
+UPDATE public.perfiles_usuarios 
+SET xp = 705, nivel = 2, racha = 3, ultimo_entrenamiento = now() - INTERVAL '1 day' 
+WHERE id = 'e1111111-1111-1111-1111-111111111111';
+
+UPDATE public.perfiles_usuarios 
+SET xp = 165, nivel = 1, racha = 1, ultimo_entrenamiento = now() - INTERVAL '2 days' 
+WHERE id = 'e2222222-2222-2222-2222-222222222222';
+
+-- E. Insertar evaluaciones diagnósticas Pre-test asociadas al docente
+INSERT INTO public.evaluaciones_docente (estudiante_id, docente_id, tipo_evaluacion, atencion_sostenida_score, atencion_selectiva_score, control_inhibitorio_score, memoria_trabajo_score, atencion_dividida_score, tiempo_respuesta_general_ms, observaciones, created_at)
+VALUES 
+('e1111111-1111-1111-1111-111111111111', 'd1111111-1111-1111-1111-111111111111', 'pre', 60.00, 55.50, 68.00, 50.00, 40.00, 590.20, 'Atención sostenida estable inicialmente, decae levemente en tramos finales.', now() - INTERVAL '4 days'),
+('e2222222-2222-2222-2222-222222222222', 'd1111111-1111-1111-1111-111111111111', 'pre', 42.00, 48.00, 30.50, 40.00, 25.00, 710.00, 'Impulsividad alta. Presenta fallos de inhibición frecuentes en estímulos Go/No-Go.', now() - INTERVAL '3 days')
+ON CONFLICT DO NOTHING;
